@@ -1,0 +1,511 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Yakıt Takip Sistemi - BETA</title>
+    <!-- Font & CSS -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body { font-family: 'Inter', sans-serif; background-color: #f8fafc; }
+        .excel-table { border-collapse: collapse; width: 100%; border: 1px solid #94a3b8; }
+        .excel-table thead th { background-color: #14532d; color: #ffffff; border: 1px solid #94a3b8; padding: 10px 8px; font-weight: 700; font-size: 0.85rem; }
+        .excel-table tbody td { border: 1px solid #cbd5e1; padding: 8px; font-size: 0.85rem; background-color: #ffffff; color: #334155; }
+        .excel-table tr:nth-child(even) td { background-color: #f8fafc; }
+        .hidden { display: none !important; }
+        .loading-overlay { position: fixed; inset: 0; background: rgba(255,255,255,0.9); display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 9999; }
+        .btn-tab { flex: 1; padding: 12px; border-radius: 8px; font-weight: 600; font-size: 14px; transition: 0.3s; }
+        .btn-tab.active { background-color: #166534; color: white; }
+        .btn-tab.inactive { background-color: rgba(255,255,255,0.6); color: #14532d; }
+        .quick-link { display: block; padding: 8px; font-size: 12px; color: #1e40af; background: #eff6ff; border: 1px solid #dbeafe; border-radius: 6px; margin-top: 4px; transition: 0.2s; }
+        .quick-link:hover { background: #dbeafe; }
+    </style>
+</head>
+<body>
+    <div id="loading" class="loading-overlay">
+        <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-green-800 mb-4"></div>
+        <h2 style="color:#166534; font-weight:bold; font-size:24px;">YTS Yükleniyor...</h2>
+        <p id="loading-text">Lütfen Bekleyiniz</p>
+    </div>
+
+    <div id="app" class="max-w-6xl mx-auto p-4 hidden">
+        <!-- Header -->
+        <div class="bg-green-800 text-white p-6 rounded-xl shadow-lg mb-6 text-center">
+            <h1 class="text-xl font-bold uppercase">ORMAN GENEL MÜDÜRLÜĞÜ</h1>
+            <p class="text-lg">HAVACILIK DAİRESİ</p>
+            <p class="text-sm opacity-80">YAKIT TAKİP SİSTEMİ (BETA)</p>
+        </div>
+
+        <!-- Navigation Tabs -->
+        <div class="flex gap-2 mb-8" id="tabs">
+            <button onclick="changeView('entry')" id="tab-entry" class="btn-tab active">Yakıt Girişi</button>
+            <button onclick="changeView('search')" id="tab-search" class="btn-tab inactive">Kayıt Ara</button>
+            <button onclick="changeView('admin')" id="tab-admin" class="btn-tab inactive">Yönetici</button>
+        </div>
+
+        <!-- Views -->
+        <div id="view-entry" class="bg-white p-6 rounded-xl shadow-md">
+            <h2 class="text-xl font-bold mb-4">Yeni Yakıt Girişi</h2>
+            <div id="entry-form-container" class="space-y-4">
+                <!-- Step 1 -->
+                <div id="step-1">
+                    <label class="block text-sm font-bold mb-1">Tarih</label>
+                    <input type="date" id="input-date" class="w-full p-3 border rounded-lg mb-4">
+                    
+                    <label class="block text-sm font-bold mb-1">Personel</label>
+                    <select id="input-personnel" class="w-full p-3 border rounded-lg mb-4"></select>
+                    
+                    <div id="manual-personnel-fields" class="hidden space-y-4">
+                        <input type="text" id="manual-name" placeholder="Ad Soyad" class="w-full p-3 border rounded-lg">
+                        <select id="manual-job" class="w-full p-3 border rounded-lg">
+                            <option value="Pilot">Pilot</option>
+                            <option value="Uçuş Teknisyeni">Uçuş Teknisyeni</option>
+                            <option value="Şoför">Şoför</option>
+                        </select>
+                        <input type="text" id="manual-company" placeholder="Firma / Kurum" class="w-full p-3 border rounded-lg">
+                    </div>
+                    <label class="flex items-center gap-2 mt-2">
+                        <input type="checkbox" id="chk-manual" onchange="toggleManualPerson()"> Adım listede yok
+                    </label>
+                </div>
+
+                <!-- Step 2 -->
+                <div id="step-2" class="hidden">
+                    <label class="block text-sm font-bold mb-1">İkmal Tipi</label>
+                    <select id="input-refuel-type" class="w-full p-3 border rounded-lg mb-4" onchange="onRefuelTypeChange()">
+                        <option value="Havalimanı / Alanı">Havalimanı / Alanı</option>
+                        <option value="Tanker">Tanker</option>
+                    </select>
+
+                    <div id="location-airport-div">
+                        <label class="block text-sm font-bold mb-1">Havalimanı / Alanı Seçiniz</label>
+                        <select id="input-airport" class="w-full p-3 border rounded-lg mb-4" onchange="onAirportChange()"></select>
+                    </div>
+
+                    <div id="location-tanker-div" class="hidden">
+                        <label class="block text-sm font-bold mb-1">Tanker Plakası Seçiniz</label>
+                        <select id="input-tanker" class="w-full p-3 border rounded-lg mb-4"></select>
+                    </div>
+                    
+                    <!-- Military Card Field -->
+                    <div id="military-fields" class="hidden">
+                        <label class="block text-sm font-bold mb-1 text-red-600">Opet Kart Numarası</label>
+                        <input type="text" id="input-card" class="w-full p-3 border-2 border-red-200 rounded-lg mb-4" placeholder="Kart numarasını giriniz">
+                    </div>
+
+                    <label class="block text-sm font-bold mb-1">Kuyruk Numarası</label>
+                    <select id="input-aircraft" class="w-full p-3 border rounded-lg mb-4"></select>
+                </div>
+
+                <!-- Step 3 -->
+                <div id="step-3" class="hidden">
+                    <label class="block text-sm font-bold mb-1">Makbuz Numarası</label>
+                    <input type="text" id="input-receipt" class="w-full p-3 border rounded-lg mb-4" placeholder="123456">
+                    
+                    <label class="block text-sm font-bold mb-1">Yakıt Miktarı (Litre)</label>
+                    <input type="number" id="input-amount" class="w-full p-3 border rounded-lg mb-4" placeholder="500">
+                </div>
+
+                <div class="flex gap-2 mt-6">
+                    <button id="btn-prev" onclick="prevStep()" class="flex-1 bg-gray-500 text-white p-3 rounded-lg hidden">Geri</button>
+                    <button id="btn-next" onclick="nextStep()" class="flex-1 bg-green-700 text-white p-3 rounded-lg shadow-lg active:scale-95 transition-transform">İleri</button>
+                </div>
+            </div>
+
+            <!-- Global Links -->
+            <div class="mt-10 pt-6 border-t border-gray-100">
+                <h3 class="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Hızlı Bağlantılar</h3>
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-2">
+                    <a href="https://bulut.ogm.gov.tr/OGMKURUMMAKBUZ" target="_blank" class="quick-link font-medium">OGM Hava Araçları & Tankerleri</a>
+                    <a href="https://bulut.ogm.gov.tr/OGMKIRALIKHAVAMAKBUZ" target="_blank" class="quick-link font-medium">Kiralık Hava Araçları</a>
+                    <a href="https://bulut.ogm.gov.tr/kiralikaskeri" target="_blank" class="quick-link font-medium">Askeri Meydan İkmal</a>
+                </div>
+            </div>
+        </div>
+
+        <div id="view-search" class="bg-white p-6 rounded-xl shadow-md hidden">
+            <h2 class="text-xl font-bold mb-4">Kayıt Arama</h2>
+            <div class="flex gap-2 mb-4">
+                <input type="text" id="search-query" placeholder="İsim, Kuyruk No veya Makbuz No..." class="flex-1 p-3 border rounded-lg">
+                <button onclick="performSearch()" class="bg-green-700 text-white px-6 rounded-lg shadow active:scale-95 transition-transform">Ara</button>
+            </div>
+            <div class="overflow-x-auto">
+                <table class="excel-table" id="results-table">
+                    <thead>
+                        <tr>
+                            <th>Tarih</th>
+                            <th>Personel</th>
+                            <th>Kuyruk No</th>
+                            <th>Makbuz No</th>
+                            <th>Miktar</th>
+                        </tr>
+                    </thead>
+                    <tbody id="search-results-body"></tbody>
+                </table>
+            </div>
+        </div>
+
+        <div id="view-admin" class="bg-white p-6 rounded-xl shadow-md hidden">
+            <div id="admin-login">
+                <h2 class="text-xl font-bold mb-4 text-center">Yönetici Girişi</h2>
+                <input type="password" id="admin-pass" placeholder="Parola" class="w-full p-3 border rounded-lg mb-4">
+                <button onclick="adminLogin()" class="w-full bg-green-800 text-white p-3 rounded-lg active:scale-95 transition-transform">Giriş Yap</button>
+            </div>
+            <div id="admin-content" class="hidden">
+                <h2 class="text-xl font-bold mb-4">Yönetici Paneli</h2>
+                <div class="bg-blue-50 p-4 rounded-lg border border-blue-100 text-sm text-blue-800">
+                    Sistem BETA aşamasındadır. Spreadsheet entegrasyonu aktiftir. Tüm kayıtlar doğrudan Google E-Tabloya yazılmaktadır.
+                </div>
+                <div class="mt-4">
+                   <p class="font-bold mb-2">Makbuz Sistemleri:</p>
+                   <ul class="list-disc ml-6 space-y-1 text-sm">
+                       <li><a href="https://bulut.ogm.gov.tr/OGMKURUMMAKBUZ" target="_blank" class="text-blue-600 underline">OGM Kurum Makbuz Sistemi</a></li>
+                       <li><a href="https://bulut.ogm.gov.tr/OGMKIRALIKHAVAMAKBUZ" target="_blank" class="text-blue-600 underline">Kiralık Makbuz Sistemi</a></li>
+                       <li><a href="https://bulut.ogm.gov.tr/kiralikaskeri" target="_blank" class="text-blue-600 underline">Askeri Meydan Makbuz Sistemi</a></li>
+                   </ul>
+                </div>
+                <button onclick="logout()" class="mt-6 text-red-600 font-bold">Oturumu Kapat</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Scripts -->
+    <script>
+        var SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwJVvXLX84N_79x_Yik_flkQ1jjr70Krwqnj6vJ77gUnCSlUcs9oq2MkKpTy2ZIwtU/exec";
+        
+        var state = {
+            view: 'entry',
+            step: 1,
+            data: {
+                personnel: [],
+                aircrafts: [],
+                airports: [],
+                tankers: [],
+                records: []
+            },
+            isLoggedIn: false
+        };
+
+        function callBackend(action, payload, callback) {
+            var xhr = new XMLHttpRequest();
+            xhr.open("POST", SCRIPT_URL, true);
+            xhr.setRequestHeader("Content-Type", "text/plain;charset=utf-8");
+            xhr.onreadystatechange = function() {
+                if (xhr.readyState === 4) {
+                    if (xhr.status >= 200 && xhr.status < 400) {
+                        try {
+                            var response = JSON.parse(xhr.responseText);
+                            callback(null, response);
+                        } catch(e) {
+                            callback("Veri işleme hatası: " + e.message);
+                        }
+                    } else {
+                        callback("Sunucu hatası: " + xhr.status);
+                    }
+                }
+            };
+            xhr.onerror = function() {
+                callback("Bağlantı hatası: Sunucuya ulaşılamadı.");
+            };
+            xhr.send(JSON.stringify({ action: action, payload: payload }));
+        }
+
+        window.onload = function() {
+            var today = new Date();
+            var day = ("0" + today.getDate()).slice(-2);
+            var month = ("0" + (today.getMonth() + 1)).slice(-2);
+            var dateStr = today.getFullYear() + "-" + (month) + "-" + (day);
+            document.getElementById('input-date').value = dateStr;
+            initApp();
+        };
+
+        function initApp() {
+            callBackend("onGetAdminPanelData", null, function(err, res) {
+                if (err) {
+                    alert(err + "\nLütfen sayfayı yenileyin.");
+                    document.getElementById('loading-text').innerText = "HATA: Bağlantı Kurulamadı.";
+                    return;
+                }
+                if (res.success) {
+                    state.data.personnel = res.data.personnel || [];
+                    state.data.aircrafts = res.data.aircrafts || [];
+                    state.data.airports = res.data.airports || [];
+                    state.data.tankers = res.data.tankers || [];
+                    state.data.records = res.data.fuelRecords || [];
+                    renderSelectors();
+                }
+                document.getElementById('loading').classList.add('hidden');
+                document.getElementById('app').classList.remove('hidden');
+            });
+        }
+
+        function renderSelectors() {
+            var pSel = document.getElementById('input-personnel');
+            pSel.innerHTML = '<option value="">Personel Seçiniz</option>';
+            for(var i=0; i<state.data.personnel.length; i++) {
+                var p = state.data.personnel[i];
+                var opt = document.createElement('option');
+                opt.value = p.id;
+                opt.text = p.name;
+                pSel.appendChild(opt);
+            }
+
+            var aSel = document.getElementById('input-aircraft');
+            aSel.innerHTML = '<option value="">Kuyruk No Seçiniz</option>';
+            for(var j=0; j<state.data.aircrafts.length; j++) {
+                var ac = state.data.aircrafts[j];
+                var optAc = document.createElement('option');
+                optAc.value = ac.tailNumber;
+                optAc.text = ac.tailNumber + " (" + ac.company + ")";
+                aSel.appendChild(optAc);
+            }
+
+            var airSel = document.getElementById('input-airport');
+            airSel.innerHTML = '<option value="">Havalimanı Seçiniz</option>';
+            for(var k=0; k<state.data.airports.length; k++) {
+                var air = state.data.airports[k];
+                var optAir = document.createElement('option');
+                optAir.value = air.name;
+                optAir.text = air.name;
+                airSel.appendChild(optAir);
+            }
+
+            var tSel = document.getElementById('input-tanker');
+            tSel.innerHTML = '<option value="">Tanker Plakası Seçiniz</option>';
+            for(var l=0; l<state.data.tankers.length; l++) {
+                var tanker = state.data.tankers[l];
+                var optT = document.createElement('option');
+                optT.value = tanker.plate;
+                optT.text = tanker.plate + " (" + tanker.company + ")";
+                tSel.appendChild(optT);
+            }
+        }
+
+        function onRefuelTypeChange() {
+            var type = document.getElementById('input-refuel-type').value;
+            var airportDiv = document.getElementById('location-airport-div');
+            var tankerDiv = document.getElementById('location-tanker-div');
+            var militaryDiv = document.getElementById('military-fields');
+
+            if (type === "Tanker") {
+                airportDiv.classList.add('hidden');
+                tankerDiv.classList.remove('hidden');
+                militaryDiv.classList.add('hidden');
+            } else {
+                airportDiv.classList.remove('hidden');
+                tankerDiv.classList.add('hidden');
+                onAirportChange();
+            }
+        }
+
+        function onAirportChange() {
+            var type = document.getElementById('input-refuel-type').value;
+            if (type === "Tanker") return;
+            var airportName = document.getElementById('input-airport').value;
+            var militaryDiv = document.getElementById('military-fields');
+            var airportType = "Sivil";
+            for(var k=0; k<state.data.airports.length; k++) {
+                if(state.data.airports[k].name === airportName) {
+                    airportType = state.data.airports[k].type;
+                    break;
+                }
+            }
+            if (airportType === "Askeri") {
+                militaryDiv.classList.remove('hidden');
+            } else {
+                militaryDiv.classList.add('hidden');
+            }
+        }
+
+        function changeView(view) {
+            state.view = view;
+            var views = ['entry', 'search', 'admin'];
+            for(var i=0; i<views.length; i++) {
+                var v = views[i];
+                document.getElementById('view-' + v).classList.add('hidden');
+                document.getElementById('tab-' + v).classList.remove('active');
+                document.getElementById('tab-' + v).classList.add('inactive');
+            }
+            document.getElementById('view-' + view).classList.remove('hidden');
+            document.getElementById('tab-' + view).classList.add('active');
+            document.getElementById('tab-' + view).classList.remove('inactive');
+        }
+
+        function toggleManualPerson() {
+            var isManual = document.getElementById('chk-manual').checked;
+            var pSel = document.getElementById('input-personnel');
+            var manualDiv = document.getElementById('manual-personnel-fields');
+            if (isManual) {
+                pSel.classList.add('hidden');
+                manualDiv.classList.remove('hidden');
+            } else {
+                pSel.classList.remove('hidden');
+                manualDiv.classList.add('hidden');
+            }
+        }
+
+        function nextStep() {
+            if (state.step === 1) {
+                state.step = 2;
+                document.getElementById('step-1').classList.add('hidden');
+                document.getElementById('step-2').classList.remove('hidden');
+                document.getElementById('btn-prev').classList.remove('hidden');
+            } else if (state.step === 2) {
+                state.step = 3;
+                document.getElementById('step-2').classList.add('hidden');
+                document.getElementById('step-3').classList.remove('hidden');
+                document.getElementById('btn-next').innerText = "Kaydet ve Yönlendir";
+            } else if (state.step === 3) {
+                submitForm();
+            }
+        }
+
+        function prevStep() {
+            if (state.step === 2) {
+                state.step = 1;
+                document.getElementById('step-2').classList.add('hidden');
+                document.getElementById('step-1').classList.remove('hidden');
+                document.getElementById('btn-prev').classList.add('hidden');
+            } else if (state.step === 3) {
+                state.step = 2;
+                document.getElementById('step-3').classList.add('hidden');
+                document.getElementById('step-2').classList.remove('hidden');
+                document.getElementById('btn-next').innerText = "İleri";
+            }
+        }
+
+        function submitForm() {
+            var date = document.getElementById('input-date').value;
+            var receipt = document.getElementById('input-receipt').value;
+            var amount = document.getElementById('input-amount').value;
+            var refuelType = document.getElementById('input-refuel-type').value;
+            var tailNumber = document.getElementById('input-aircraft').value;
+            var cardNumber = document.getElementById('input-card').value;
+
+            var locationName = "";
+            if (refuelType === "Tanker") {
+                locationName = document.getElementById('input-tanker').value;
+            } else {
+                locationName = document.getElementById('input-airport').value;
+            }
+
+            if(!date || !receipt || !amount || !locationName || !tailNumber) {
+                alert("Lütfen tüm alanları doldurun.");
+                return;
+            }
+
+            document.getElementById('loading').classList.remove('hidden');
+            document.getElementById('loading-text').innerText = "Veri E-Tabloya Gönderiliyor...";
+            
+            var personCompany = "";
+            var isManual = document.getElementById('chk-manual').checked;
+            var personName = "";
+            var personJob = "";
+
+            if (isManual) {
+                personName = document.getElementById('manual-name').value;
+                personJob = document.getElementById('manual-job').value;
+                personCompany = document.getElementById('manual-company').value;
+            } else {
+                var pId = document.getElementById('input-personnel').value;
+                for(var i=0; i<state.data.personnel.length; i++) {
+                    if(state.data.personnel[i].id === pId) {
+                        personName = state.data.personnel[i].name;
+                        personJob = state.data.personnel[i].job;
+                        personCompany = state.data.personnel[i].company;
+                        break;
+                    }
+                }
+            }
+
+            var aircraftCompany = "";
+            for(var j=0; j<state.data.aircrafts.length; j++) {
+                if(state.data.aircrafts[j].tailNumber === tailNumber) {
+                    aircraftCompany = state.data.aircrafts[j].company;
+                    break;
+                }
+            }
+
+            // Redirection logic logic
+            var isOGM = (personCompany.toUpperCase().indexOf("OGM") !== -1 || aircraftCompany.toUpperCase().indexOf("OGM") !== -1);
+            var targetUrl = "https://bulut.ogm.gov.tr/OGMKIRALIKHAVAMAKBUZ";
+
+            if (isOGM) {
+                targetUrl = "https://bulut.ogm.gov.tr/OGMKURUMMAKBUZ";
+            } else {
+                var airportType = "Sivil";
+                if (refuelType !== "Tanker") {
+                    for(var k=0; k<state.data.airports.length; k++) {
+                        if(state.data.airports[k].name === locationName) {
+                            airportType = state.data.airports[k].type;
+                            break;
+                        }
+                    }
+                    if (airportType === "Askeri") {
+                        targetUrl = "https://bulut.ogm.gov.tr/kiralikaskeri";
+                    }
+                }
+            }
+
+            var denormalizedRecord = {
+                'Tarih': date,
+                'Kayıt Tipi': 'Hava Aracı İkmal',
+                'Makbuz Numarası': receipt,
+                'Makbuz Tipi': '-',
+                'Yakıt Miktarı (lt)': parseFloat(amount),
+                'Kuyruk Numarası': tailNumber,
+                'Personel Adı': personName,
+                'Mesleği': personJob,
+                'Kart Numarası': cardNumber || '',
+                'İkmal Tipi': refuelType,
+                'İkmal Konumu': locationName,
+                'Kayıt No': 'BETA-' + Date.now()
+            };
+
+            callBackend("onAddRecord", denormalizedRecord, function(err, res) {
+                setTimeout(function() {
+                    window.location.href = targetUrl;
+                }, 800);
+            });
+        }
+
+        function performSearch() {
+            var q = document.getElementById('search-query').value.toLowerCase();
+            var body = document.getElementById('search-results-body');
+            body.innerHTML = '';
+            for(var i=0; i<state.data.records.length; i++) {
+                var r = state.data.records[i];
+                var name = (r['Personel Adı'] || '').toLowerCase();
+                var recNo = (r['Makbuz Numarası'] || '').toLowerCase();
+                var tail = (r['Kuyruk Numarası'] || '').toLowerCase();
+                if (name.indexOf(q) !== -1 || recNo.indexOf(q) !== -1 || tail.indexOf(q) !== -1) {
+                    var tr = document.createElement('tr');
+                    tr.innerHTML = '<td>'+(r['Tarih'] || '-')+'</td>' +
+                                 '<td>'+(r['Personel Adı'] || '-')+'</td>' +
+                                 '<td>'+(r['Kuyruk Numarası'] || '-')+'</td>' +
+                                 '<td>'+(r['Makbuz Numarası'] || '-')+'</td>' +
+                                 '<td>'+(r['Yakıt Miktarı (lt)'] || '0')+'</td>';
+                    body.appendChild(tr);
+                }
+            }
+        }
+
+        function adminLogin() {
+            var pass = document.getElementById('admin-pass').value;
+            if (pass === '1839') {
+                state.isLoggedIn = true;
+                document.getElementById('admin-login').classList.add('hidden');
+                document.getElementById('admin-content').classList.remove('hidden');
+            } else { alert("Hatalı Parola"); }
+        }
+
+        function logout() {
+            state.isLoggedIn = false;
+            document.getElementById('admin-login').classList.remove('hidden');
+            document.getElementById('admin-content').classList.add('hidden');
+            document.getElementById('admin-pass').value = '';
+        }
+    </script>
+</body>
+</html>
